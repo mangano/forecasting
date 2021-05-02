@@ -112,7 +112,7 @@ def cv_loop(df_h, ts_list, progress_bar=True):
     return cvs, perfs
 
 
-def cv_plot(store_perfs, id_label,
+def cv_plot(store_perfs, id_label, metric='smape',
             n_days_horizon=180, n_increments=10):
     increment_delta = math.floor(n_days_horizon/n_increments)  
     h_subset = list(range(increment_delta, n_days_horizon, increment_delta))
@@ -121,17 +121,17 @@ def cv_plot(store_perfs, id_label,
     ts_labels = []
     for key, df_p in store_perfs.items():   
         # convert delta into integers (days)
-        df_plot = df_p[['horizon','mape']].copy()
+        df_plot = df_p[['horizon',metric]].copy()
         df_plot['horizon'] = df_plot['horizon'].apply(lambda x: x.days)
 
         # only plot subset of well-separated h since consecutive days are correlated
         df_to_plot = df_plot[df_plot['horizon'].isin(h_subset)]
 
         # convert to ts to reuse bplot function
-        ts_to_plot = df_to_plot.set_index('horizon')['mape']
+        ts_to_plot = df_to_plot.set_index('horizon')[metric]
         ts_list.append(ts_to_plot)
         ts_labels.append(f'{id_label} {key}')
     
     
-    bplot.plot_timeseries(ts_list, ts_labels, xlabel='horizon [days]', ylabel='MAPE')
-
+    bplot.plot_timeseries(ts_list, ts_labels, xlabel='horizon [days]', 
+                          ylabel=metric.upper())
