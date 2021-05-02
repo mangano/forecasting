@@ -12,6 +12,11 @@ from prophet.diagnostics import performance_metrics
 from prophet.diagnostics import cross_validation
 from prophet.plot import plot_cross_validation_metric
 
+# for Hierarchical models
+import hts
+from hts.hierarchy import HierarchyTree
+
+
 # My own code
 import forecasting.bplot as bplot
 
@@ -51,6 +56,9 @@ def preprocess_data(file='data/train.csv'):
     
     # hierarchy df
     df_h = df_bottom_level.join(df_middle_level).join(df_total)
+
+    # This is necessary because HTS expects index to have 'freq' set
+    df_h = df_h.resample("D").sum()
     
     print(f"Number of time series at the bottom level: {df_bottom_level.shape[1]}")
     print(f"Number of time series at the middle level: {df_middle_level.shape[1]}")
@@ -135,3 +143,39 @@ def cv_plot(store_perfs, id_label, metric='smape',
     
     bplot.plot_timeseries(ts_list, ts_labels, xlabel='horizon [days]', 
                           ylabel=metric.upper())
+
+    
+    
+    
+    
+    
+### HIERARCHICAL TIME SERIES
+
+def calc_store_hier_preds(hierarchy, df_h, store_idx='1'):
+    small_hier = {store_idx: hierarchy[store_idx]}
+    small_df_cols = hierarchy[store_idx].copy()
+    small_df_cols.append(store_idx)
+    small_hdf = df_h[small_df_cols].copy()
+
+    model_hts_prophet = hts.HTSRegressor(model='prophet', revision_method='OLS')
+    model_hts_prophet = model_hts_prophet.fit(df=small_hdf, nodes=small_hier, 
+                                              root=store_idx)
+    pred_hts = model_hts_prophet.predict(steps_ahead=90)
+    return pred_hts
+
+
+def plot_comparison(df_train, df_preds, idx='1_1',
+                    xmin = None, xmax = None):
+    df_y = df_train[[idx]].copy()
+    df_y.columns =['y']
+
+    df_yhat = df_preds[[idx]].copy()
+    df_yhat.columns =['yhat']
+
+    df_comp = df_yhat.join(df_y)
+
+    ax = df_comp.plot(title="Sales - item level")
+    ax.legend(bbox_to_anchor=(1.0, 1.0));
+    x_range = [xmin, xmax]
+    ax.set_xlim(x_range);
+    
