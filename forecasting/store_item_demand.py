@@ -179,3 +179,95 @@ def plot_comparison(df_train, df_preds, idx='1_1',
     x_range = [xmin, xmax]
     ax.set_xlim(x_range);
     
+    
+    
+### Model evaluation
+
+def shf_split(df, n_years_min_training=3.5, horizon=90):
+    full_train_start = min(df.index)
+    full_train_end   = max(df.index)
+    min_train_end = full_train_start + pd.Timedelta(365*n_years_min_training, 'days')
+    horizon_delta = pd.Timedelta(horizon, 'days')
+
+    cutoffs = []
+    cutoff = (full_train_end - horizon_delta)
+    while(cutoff>min_train_end):
+        cutoffs.append(cutoff)
+        cutoff = cutoff - horizon_delta/2
+
+    print (f"""
+# full train start : '{full_train_start.date()}'
+# full train end   : '{full_train_end.date()}'
+# min train end    : '{min_train_end.date()}'
+# horizon          :  {horizon} days
+    """)
+
+    print(f'# number of cutoffs: {len(cutoffs)}')    
+    splits = {}   
+    for cutoff in cutoffs:
+        print(str(cutoff.date()))
+        df_shf_train = df[:cutoff]
+        df_shf_val   = df[cutoff+pd.Timedelta(1, 'day'):cutoff+horizon_delta]
+        splits[cutoff] = [df_shf_train, df_shf_val]
+    
+    return splits
+
+
+def shf_forecasts_loop(hierarchy, shf_splits):
+    cutoffs = list(shf_splits.keys())
+
+    # FIXME: take just 1 to speed up testing
+    #cutoffs = cutoffs[1:4]
+
+    forecasts_dict = {}    
+    stores = hierarchy['total']
+
+    # FIXME: take just 1 to speed up testing
+    stores = stores[:1]
+    for store in stores:
+        print(f'# store: {store}')
+        store_items = [store_item for store in stores for store_item in hierarchy[store]]
+
+        # FIXME: take just 5 to speed up testing
+        store_items = store_items[:1]
+        for store_item in store_items:
+            print(f'# store_item: {store_item}')
+
+            shf_forecasts = []
+            for cutoff in cutoffs:
+                print (f'# cutoff: {cutoff.date()}')
+                df_shf_train = shf_splits[cutoff][0]
+                df_shf_valid = shf_splits[cutoff][1]  
+
+                # Reformatting datasets (follwowing Prophet requirement)
+                df_model_train = df_shf_train[store_item].to_frame().reset_index()
+                df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
+                df_model_train.columns = ['ds', 'y']
+                df_model_valid.columns = ['ds', 'y']
+
+                # Model specific part
+                m = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
+                m.fit(df_model_train)
+                future = m.make_future_dataframe(periods=90)
+                df_forecast = m.predict(future)
+
+                # Here I do comparison plots and evaluate performance metrics
+                df_comp = df_model_valid.set_index('ds').join(df_forecast.set_index('ds'))
+                df_comp['h_days'] = (df_comp.index - cutoff).days
+                df_comp['delta'] = df_comp['yhat'] - df_comp['y'] 
+                shf_forecasts.append(df_comp[['y','yhat','delta','h_days']].reset_index().drop('ds', axis=1))
+
+                plot = False
+                if(plot):
+                    xrange = [cutoff-pd.Timedelta(90, 'days'), cutoff+pd.Timedelta(100, 'days')]
+                    fig, ax = plt.subplots()
+                    ax.set_xlim(xrange)
+                    fig1 = m.plot(df_forecast, ax)
+
+                    xrange = [cutoff, cutoff+pd.Timedelta(100, 'days')]
+                    ax = df_comp[['y','yhat']].plot()
+                    ax.set_xlim(xrange)
+
+            df_concat = pd.concat(shf_forecasts, axis=0, ignore_index=True)
+            forecasts_dict[store_item] = df_concat
+    return forecasts_dict
