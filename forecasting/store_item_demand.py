@@ -1,6 +1,7 @@
 # General imports
 from IPython.display import display, HTML, Markdown
 import math 
+from datetime import datetime
 
 # General data analysis imports
 import pandas as pd
@@ -183,7 +184,7 @@ def plot_comparison(df_train, df_preds, idx='1_1',
     
 ### Model evaluation
 
-def shf_split(df, n_years_min_training=3.5, horizon=90):
+def shf_split(df, n_years_min_training=3.5, horizon=90, n_max_splits=7):
     full_train_start = min(df.index)
     full_train_end   = max(df.index)
     min_train_end = full_train_start + pd.Timedelta(365*n_years_min_training, 'days')
@@ -201,7 +202,10 @@ def shf_split(df, n_years_min_training=3.5, horizon=90):
 # min train end    : '{min_train_end.date()}'
 # horizon          :  {horizon} days
     """)
-
+    
+    if(n_max_splits is not None):
+        cutoffs = cutoffs[:n_max_splits]
+    
     print(f'# number of cutoffs: {len(cutoffs)}')    
     splits = {}   
     for cutoff in cutoffs:
@@ -213,7 +217,13 @@ def shf_split(df, n_years_min_training=3.5, horizon=90):
     return splits
 
 
-def shf_forecasts_loop(hierarchy, shf_splits):
+def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
+                       n_store=None, n_store_items=None,
+                       verbose=False):
+    # Horizon
+    H=90
+    
+    start = datetime.now()
     cutoffs = list(shf_splits.keys())
 
     # FIXME: take just 1 to speed up testing
@@ -222,20 +232,25 @@ def shf_forecasts_loop(hierarchy, shf_splits):
     forecasts_dict = {}    
     stores = hierarchy['total']
 
-    # FIXME: take just 1 to speed up testing
-    stores = stores[:1]
+    # take just few to speed up testing
+    if(n_store is not None):
+        stores = stores[:n_store]
+        
     for store in stores:
         print(f'# store: {store}')
-        store_items = [store_item for store in stores for store_item in hierarchy[store]]
+        #store_items = [store_item for store in stores for store_item in hierarchy[store]]
+        store_items = hierarchy[store]
+        
+        # take just few to speed up testing
+        if(n_store_items is not None):
+            store_items = store_items[:n_store_items]
 
-        # FIXME: take just 5 to speed up testing
-        store_items = store_items[:1]
         for store_item in store_items:
-            print(f'# store_item: {store_item}')
+            #print(f'# store_item: {store_item}')
 
             shf_forecasts = []
             for cutoff in cutoffs:
-                print (f'# cutoff: {cutoff.date()}')
+                #print (f'# cutoff: {cutoff.date()}')
                 df_shf_train = shf_splits[cutoff][0]
                 df_shf_valid = shf_splits[cutoff][1]  
 
@@ -245,17 +260,36 @@ def shf_forecasts_loop(hierarchy, shf_splits):
                 df_model_train.columns = ['ds', 'y']
                 df_model_valid.columns = ['ds', 'y']
 
-                # Model specific part
-                m = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
-                m.fit(df_model_train)
-                future = m.make_future_dataframe(periods=90)
-                df_forecast = m.predict(future)
-
+                ### Model specific part
+                if(algo=='prophet'):                
+                    m = Prophet(yearly_seasonality=True, 
+                                weekly_seasonality=True, 
+                                daily_seasonality=False)
+                    m.fit(df_model_train)
+                    future = m.make_future_dataframe(periods=H)
+                    df_forecast = m.predict(future)
+                elif(algo in ('naive','average')):
+                    # simple models
+                    last_train_tmstp = df_model_train['ds'].max()
+                    forecast_naive  = \
+                        df_model_train[df_model_train['ds']==last_train_tmstp]['y'].values[0]
+                    forcast_average = df_model_train['y'].mean()
+                    future_dates = pd.date_range(start=last_train_tmstp+pd.Timedelta(1, 'day'), 
+                                                 freq='D', periods=H)
+                    forecast = forecast_naive if algo=='naive' else forcast_average
+                    df_forecast = pd.DataFrame({'ds':future_dates, 
+                                                    'yhat':forecast})
+                else:
+                    raise ValueError("algo should be in ('naive', 'average', 'average')")
+                ####
+                
                 # Here I do comparison plots and evaluate performance metrics
                 df_comp = df_model_valid.set_index('ds').join(df_forecast.set_index('ds'))
+                df_comp['cutoff'] = cutoff
                 df_comp['h_days'] = (df_comp.index - cutoff).days
                 df_comp['delta'] = df_comp['yhat'] - df_comp['y'] 
-                shf_forecasts.append(df_comp[['y','yhat','delta','h_days']].reset_index().drop('ds', axis=1))
+                #shf_forecasts.append(df_comp.reset_index().drop('ds', axis=1))
+                shf_forecasts.append(df_comp.reset_index())
 
                 plot = False
                 if(plot):
@@ -270,4 +304,24 @@ def shf_forecasts_loop(hierarchy, shf_splits):
 
             df_concat = pd.concat(shf_forecasts, axis=0, ignore_index=True)
             forecasts_dict[store_item] = df_concat
+            
+    end = datetime.now()
+    delta = end - start
+    if(verbose):
+        print(f'# execution walltime: {str(delta)}')
+    
     return forecasts_dict
+
+
+def eval_performance(forecasts_dict):
+    dfs_perf = []
+    for k in forecasts_dict.keys():
+        #list_columns = ['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'y', 'cutoff']
+        list_columns = ['ds', 'yhat', 'y', 'cutoff']
+        df_cv = forecasts_dict[k][list_columns].copy()
+        df_perf = performance_metrics(df_cv)
+        df_perf['h_days'] = df_perf['horizon'].apply(lambda x: x.days)
+        df_perf['store_item'] = k
+        dfs_perf.append(df_perf)    
+    merged_df_perf = pd.concat(dfs_perf, axis=0)
+    return merged_df_perf
