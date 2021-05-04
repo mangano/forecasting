@@ -246,7 +246,7 @@ def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
             store_items = store_items[:n_store_items]
 
         for store_item in store_items:
-            #print(f'# store_item: {store_item}')
+            print(f'# store_item: {store_item}')
 
             shf_forecasts = []
             for cutoff in cutoffs:
