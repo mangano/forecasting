@@ -2,6 +2,7 @@
 from IPython.display import display, HTML, Markdown
 import math 
 from datetime import datetime
+import pickle
 
 # General data analysis imports
 import pandas as pd
@@ -237,7 +238,8 @@ def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
         stores = stores[:n_store]
         
     for store in stores:
-        print(f'# store: {store}')
+        if(verbose):
+            print(f'# store: {store}')
         #store_items = [store_item for store in stores for store_item in hierarchy[store]]
         store_items = hierarchy[store]
         
@@ -246,7 +248,8 @@ def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
             store_items = store_items[:n_store_items]
 
         for store_item in store_items:
-            print(f'# store_item: {store_item}')
+            if(verbose):
+                print(f'# store_item: {store_item}')
 
             shf_forecasts = []
             for cutoff in cutoffs:
@@ -325,3 +328,22 @@ def eval_performance(forecasts_dict):
         dfs_perf.append(df_perf)    
     merged_df_perf = pd.concat(dfs_perf, axis=0)
     return merged_df_perf
+
+
+### Utilities ###
+
+
+def write_pickle(filename, obj):
+    outfile = open(filename,'wb')
+    pickle.dump(obj, outfile)
+    outfile.close()
+
+def read_pickle(filename):
+    infile = open(filename,'rb')
+    object = pickle.load(infile)
+    infile.close()
+    return object
+
+
+
+
