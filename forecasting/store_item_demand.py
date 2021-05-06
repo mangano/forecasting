@@ -220,7 +220,8 @@ def shf_split(df, n_years_min_training=3.5, horizon=90, n_max_splits=7):
 
 def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
                        n_store=None, n_store_items=None,
-                       verbose=False, H=90):
+                       seasonality_mode='additive',
+                       H=90, verbose=False):
     
     start = datetime.now()
     cutoffs = list(shf_splits.keys())
@@ -264,7 +265,8 @@ def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
                 if(algo=='prophet'):                
                     m = Prophet(yearly_seasonality=True, 
                                 weekly_seasonality=True, 
-                                daily_seasonality=False)
+                                daily_seasonality=False,
+                                seasonality_mode=seasonality_mode)
                     m.fit(df_model_train)
                     future = m.make_future_dataframe(periods=H)
                     df_forecast = m.predict(future)
