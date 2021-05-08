@@ -337,54 +337,6 @@ def shf_update_average(df_shf_train, df_shf_valid,
     shf_update_simple(df_shf_train, df_shf_valid, 
                       store_items_list,cutoff, H, deltas, simple_type='average')
 
-
-                            
-                            
-def to_clean_shf_update_naive(df_shf_train, df_shf_valid, 
-                      store_items_list,
-                      cutoff, H, deltas):
-    ## This function updates dictionary deltas
-    for store_item in store_items_list:    
-        df_model_train = df_shf_train[store_item].to_frame().reset_index()
-        df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
-        df_model_train.columns = ['ds', 'y']
-        df_model_valid.columns = ['ds', 'y']
-
-        last_value = df_model_train['y'].iloc[-1]
-        
-        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
-        df_item_valid.columns = ['ds', 'y']
-        
-        df_comp = df_item_valid.copy().set_index('ds')
-        df_comp['yhat'] = last_value
-        df_comp['cutoff'] = cutoff
-        df_comp['h_days'] = (df_comp.index - cutoff).days
-        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
-        deltas[store_item].append(df_comp.reset_index())
-
-def to_clean_shf_update_average(df_shf_train, df_shf_valid, 
-                       store_items_list,
-                       cutoff, H, deltas):
-    ## This function updates dictionary deltas
-    for store_item in store_items_list:    
-        df_model_train = df_shf_train[store_item].to_frame().reset_index()
-        df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
-        df_model_train.columns = ['ds', 'y']
-        df_model_valid.columns = ['ds', 'y']
-
-        average_value = df_model_train['y'].mean()
-        
-        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
-        df_item_valid.columns = ['ds', 'y']
-        
-        df_comp = df_item_valid.copy().set_index('ds')
-        df_comp['yhat'] = average_value
-        df_comp['cutoff'] = cutoff
-        df_comp['h_days'] = (df_comp.index - cutoff).days
-        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
-        deltas[store_item].append(df_comp.reset_index())
-
-
         
 def shf_update_seasonal_naive(df_shf_train, df_shf_valid, 
                               store_items_list,
