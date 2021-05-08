@@ -6,6 +6,7 @@ import pickle
 
 # General data analysis imports
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Facebook Prophet
 from prophet import Prophet
@@ -74,6 +75,60 @@ def preprocess_data(file='data/train.csv'):
     hierarchy = {**total, **store}
     
     return df, df_h, hierarchy
+
+#####################################################################################################
+#  ______            _                 _                                          _           _     
+# |  ____|          | |               | |                       /\               | |         (_)    
+# | |__  __  ___ __ | | ___  _ __ __ _| |_ ___  _ __ _   _     /  \   _ __   __ _| |_   _ ___ _ ___ 
+# |  __| \ \/ / '_ \| |/ _ \| '__/ _` | __/ _ \| '__| | | |   / /\ \ | '_ \ / _` | | | | / __| / __|
+# | |____ >  <| |_) | | (_) | | | (_| | || (_) | |  | |_| |  / ____ \| | | | (_| | | |_| \__ \ \__ \
+# |______/_/\_\ .__/|_|\___/|_|  \__,_|\__\___/|_|   \__, | /_/    \_\_| |_|\__,_|_|\__, |___/_|___/
+#             | |                                     __/ |                          __/ |          
+#             |_|                                    |___/                          |___/           
+#####################################################################################################
+
+# Check Share of total sales by store
+
+def do_share_by_store_analysis(df_h, hierarchy):
+    df_month = df_h.resample('MS', closed='left', label='left').sum()
+    df_week  = df_h.resample('W-MON', closed='left', label='left').sum()
+    
+    df_share_by_store = df_month[hierarchy['total']].divide(df_month['total'], axis=0)*100
+
+    ax = df_share_by_store.plot(title='Share of total sales - Monthly')
+    ax.legend(bbox_to_anchor=(1.0, 1.0));
+
+    df_share_by_store = df_week[hierarchy['total']].divide(df_week['total'], axis=0)*100
+    ax = df_share_by_store.plot(title='Share of total sales - Weekly')
+    ax.legend(bbox_to_anchor=(1.0, 1.0));
+
+    df_share_by_store = df_h[hierarchy['total']].divide(df_h['total'], axis=0)*100
+    ax = df_share_by_store.plot(title='Share of total sales - Daily')
+    ax.legend(bbox_to_anchor=(1.0, 1.0));
+
+    
+    df_share_by_store = df_h[hierarchy['total']].divide(df_h['total'], axis=0)
+    share_by_store_dict = df_share_by_store.mean(axis=0).to_dict()
+
+    res_list = []
+    for c in df_share_by_store.columns:
+        res = df_share_by_store[c] - share_by_store_dict[c]
+        res_list.append(res)
+    df_res = pd.concat(res_list, axis=1)
+
+    fig, axs = plt.subplots(5, 2)
+    fig.tight_layout()
+    ix = 1
+    for x in range(2):
+        for y in range(5):
+            yvals, xvals, _ = axs[y,x].hist(df_res[str(ix)], bins=30)
+            ymax = yvals.max()*1.1
+            xmean = df_res[str(ix)].mean()
+            axs[y,x].axvline(x=xmean, ymin=0, ymax=ymax, color='red')
+            axs[y,x].title.set_text(f'store {ix}')
+            ix +=1
+    return df_res
+
 
 
 def mape(df_cv):
