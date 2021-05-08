@@ -7,6 +7,7 @@ import random
 
 
 # General data analysis imports
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.graphics.tsaplots import plot_acf
@@ -377,20 +378,30 @@ def shf_update_seasonal_naive(df_shf_train, df_shf_valid,
 
 def shf_update_boris1(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
-    # Same as shf_update_boris, with add_holidays=False
+    # Same as boris2, but without custom events for Prophet
     shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, add_holidays=False, deltas=deltas)
+                     cutoff, H, holidays=None, deltas=deltas)
 
 def shf_update_boris2(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
-    # Same as shf_update_boris, with add_holidays=True
+    # Same as boris1, but setting some cutom events for Prophet
+    custom_events = pd.DataFrame(
+        {'holiday': 'unkown',
+         'ds': pd.to_datetime(['2014-11-30', 
+                               '2015-11-30',
+                               '2016-11-30',
+                               '2017-11-30']),
+         'lower_window': -4,
+         'upper_window': 1,
+        })
+    
     shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, add_holidays=True, deltas=deltas)
+                     cutoff, H, holidays=custom_events, deltas=deltas)
         
 
 def shf_update_boris(df_shf_train, df_shf_valid, 
                      store_items_list,
-                     cutoff, H, add_holidays, 
+                     cutoff, H, holidays, 
                      deltas):
     ## This function updates dictionary deltas
     df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
@@ -400,26 +411,12 @@ def shf_update_boris(df_shf_train, df_shf_valid,
     df_model_valid = df_shf_valid['total'].to_frame().reset_index()
     df_model_train.columns = ['ds', 'y']
     df_model_valid.columns = ['ds', 'y']
+ 
+    m = Prophet(yearly_seasonality=True, 
+                weekly_seasonality=True, 
+                daily_seasonality=False,
+                holidays=holidays)
 
-    if(add_holidays):
-        custom_event = pd.DataFrame(
-            {'holiday': 'unkown',
-             'ds': pd.to_datetime(['2014-11-30', 
-                                   '2015-11-30',
-                                   '2016-11-30',
-                                   '2017-11-30']),
-              'lower_window': -4,
-              'upper_window': 1,
-            })
-        m = Prophet(yearly_seasonality=True, 
-                    weekly_seasonality=True, 
-                    daily_seasonality=False,
-                    holidays=custom_event)
-    else:
-        m = Prophet(yearly_seasonality=True, 
-                    weekly_seasonality=True, 
-                    daily_seasonality=False)
-        
     m.fit(df_model_train)
     future = m.make_future_dataframe(periods=H)
     df_forecast = m.predict(future)
@@ -438,9 +435,86 @@ def shf_update_boris(df_shf_train, df_shf_valid,
         df_comp['delta'] = df_comp['yhat'] - df_comp['y']
         deltas[store_item].append(df_comp.reset_index())
 
+        
+def shf_update_boris3(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    
+    shf_update_prophet_middle(df_shf_train, df_shf_valid, 
+                              store_items_list, cutoff, H, holidays=None,
+                              deltas=deltas)
+    
 
+def shf_update_boris4(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    
+    # Same as boris3, but setting some cutom events for Prophet
+    custom_events = pd.DataFrame(
+        {'holiday': 'unkown',
+         'ds': pd.to_datetime(['2014-11-30', 
+                               '2015-11-30',
+                               '2016-11-30',
+                               '2017-11-30']),
+         'lower_window': -4,
+         'upper_window': 1,
+        })
+    
+    shf_update_prophet_middle(df_shf_train, df_shf_valid, 
+                              store_items_list, cutoff, H, 
+                              holidays=custom_events,
+                              deltas=deltas)
+        
+        
+def shf_update_prophet_middle(df_shf_train, df_shf_valid, 
+                              store_items_list,
+                              cutoff, H, holidays, 
+                              deltas):
+    
+    # to get sort list of stores from store_item_list
+    stores_list = np.sort(list(set([int(x.split('_')[0]) for x in store_items_list])))
+    stores_list = [str(x) for x in stores_list]
+    
+    ## This function updates dictionary deltas
+    
+
+    for store in stores_list:
+        df_store_train = df_shf_train[str(store)].to_frame().reset_index()
+        df_store_train.columns = ['ds', 'y']
+ 
+        m = Prophet(yearly_seasonality=True, 
+                    weekly_seasonality=True, 
+                    daily_seasonality=False,
+                    holidays=holidays)
+    
+        m.fit(df_store_train)
+        future = m.make_future_dataframe(periods=H)
+        df_store_forecast = m.predict(future)
+
+        items_in_store_list = [x for x in store_items_list if x.split('_')[0]==store]
+        df_share = df_shf_train[items_in_store_list].divide(df_shf_train[store], axis=0)
+        share_dict = df_share.mean(axis=0).to_dict()     
+        
+        
+        for store_item in items_in_store_list:
+            store_item_deltas = []
+            df_item_forecast = df_store_forecast.copy()
+            df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
+            df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+            df_item_valid.columns = ['ds', 'y']
+
+            # Here I do comparison plots and evaluate performance metrics
+            df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
+            df_comp['cutoff'] = cutoff
+            df_comp['h_days'] = (df_comp.index - cutoff).days
+            df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+            deltas[store_item].append(df_comp.reset_index())
+
+
+        
+        
 algo_mapping = {'boris1':shf_update_boris1,
                 'boris2':shf_update_boris2,
+                'boris3':shf_update_boris3,
+                'boris4':shf_update_boris4,
                 'naive':shf_update_naive,
                 'seasonal_naive':shf_update_seasonal_naive,
                 'average':shf_update_average
