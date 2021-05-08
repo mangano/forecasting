@@ -3,6 +3,8 @@ from IPython.display import display, HTML, Markdown
 import math 
 from datetime import datetime
 import pickle
+import random 
+
 
 # General data analysis imports
 import pandas as pd
@@ -88,61 +90,70 @@ def preprocess_data(file='data/train.csv'):
 #             |_|                                    |___/                          |___/           
 #####################################################################################################
 
-# Check Share of total sales by store
 
-def do_share_by_store_analysis(df_h, hierarchy):
+def do_share_analysis(df_h, list_cols, n_sample=None):
+    
+    if(n_sample is not None):
+        list_cols = random.sample(list_cols,n_sample)
+    n_cols = len(list_cols)
+    
     df_month = df_h.resample('MS', closed='left', label='left').sum()
     df_week  = df_h.resample('W-MON', closed='left', label='left').sum()
     
-    df_share_by_store = df_month[hierarchy['total']].divide(df_month['total'], axis=0)*100
-
-    ax = df_share_by_store.plot(title='Share of total sales - Monthly')
+    df_share = df_month[list_cols].divide(df_month['total'], axis=0)*100
+    ax = df_share.plot(title='Share of total sales - Monthly')
     ax.legend(bbox_to_anchor=(1.0, 1.0));
 
-    df_share_by_store = df_week[hierarchy['total']].divide(df_week['total'], axis=0)*100
-    ax = df_share_by_store.plot(title='Share of total sales - Weekly')
+    df_share = df_week[list_cols].divide(df_week['total'], axis=0)*100
+    ax = df_share.plot(title='Share of total sales - Weekly')
     ax.legend(bbox_to_anchor=(1.0, 1.0));
 
-    df_share_by_store = df_h[hierarchy['total']].divide(df_h['total'], axis=0)*100
-    ax = df_share_by_store.plot(title='Share of total sales - Daily')
+    df_share = df_h[list_cols].divide(df_h['total'], axis=0)*100
+    ax = df_share.plot(title='Share of total sales - Daily')
     ax.legend(bbox_to_anchor=(1.0, 1.0));
 
     
-    df_share_by_store = df_h[hierarchy['total']].divide(df_h['total'], axis=0)
-    share_by_store_dict = df_share_by_store.mean(axis=0).to_dict()
+    df_share = df_h[list_cols].divide(df_h['total'], axis=0)
+    share_dict = df_share.mean(axis=0).to_dict()
 
     res_list = []
-    for c in df_share_by_store.columns:
-        res = df_share_by_store[c] - share_by_store_dict[c]
+    for c in df_share.columns:
+        res = df_share[c] - share_dict[c]
         res_list.append(res)
     df_res = pd.concat(res_list, axis=1)
 
-    fig, axs = plt.subplots(5, 2)
+    n_y_subplots = math.ceil(n_cols/2)
+    
+    fig, axs = plt.subplots(n_y_subplots, 2)
     fig.tight_layout()
-    ix = 1
+    ix = 0
     for x in range(2):
-        for y in range(5):
-            yvals, xvals, _ = axs[y,x].hist(df_res[str(ix)], bins=30)
+        for y in range(n_y_subplots):
+            ix_store_item = list_cols[ix]
+            yvals, xvals, _ = axs[y,x].hist(df_res[ix_store_item], bins=30)
             ymax = yvals.max()*1.1
-            xmean = df_res[str(ix)].mean()
+            xmean = df_res[ix_store_item].mean()
             axs[y,x].axvline(x=xmean, ymin=0, ymax=ymax, color='red')
-            axs[y,x].title.set_text(f'store {ix}')
+            axs[y,x].title.set_text(f'store-item {ix_store_item}')
             ix +=1
    
     fig, axs = plt.subplots(1)
-    plot_acf(df_res['1'], ax=axs, zero=False, lags=600, alpha=0.05);
+    ix_store_item = list_cols[0]
+    plot_acf(df_res[ix_store_item], ax=axs, zero=False, lags=600, alpha=0.05,
+             title=f'Autocorrelation {ix_store_item}')
     
-    fig, axs = plt.subplots(10)
+    fig, axs = plt.subplots(n_cols)
     fig.tight_layout()
-    ix = 1
-    for y in range(10):
-        plot_acf(df_res[str(ix)], ax=axs[y], zero=False, lags=600, alpha=0.05)
+    ix = 0
+    for y in range(n_cols):
+        ix_store_item = list_cols[ix]
+        plot_acf(df_res[ix_store_item], ax=axs[y], zero=False, lags=600, alpha=0.05,
+                 title=f'Autocorrelation {ix_store_item}')
         ix +=1
+        
     
-    ## FIXME: I don't understand why I don't get the same values for the interval as from plot_acf
-    #acf, confint, qstat, pvalues = sm.tsa.acf(df_res['1'], nlags=600, alpha=0.05, qstat=True)
-    #plt.hist(pvalues, bins=30)
-
+    
+    
     
 def mape(df_cv):
     df_cv['horizon'] = df_cv['ds']-df_cv['cutoff']
