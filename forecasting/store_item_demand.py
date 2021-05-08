@@ -297,6 +297,71 @@ def shf_split(df, n_years_min_training=3.5, horizon=90, n_max_splits=7):
     return splits
 
 
+def new_shf_loop(shf_splits, store_items_list,
+                 #algo='boris1',
+                 H=90, 
+                 verbose=False):
+    
+    start = datetime.now()
+    cutoffs = list(shf_splits.keys())
+
+    deltas = {}
+    for store_item in store_items_list:
+        deltas[store_item] = []
+    
+    for cutoff in cutoffs:
+        print (f'# cutoff: {cutoff.date()}')
+        df_shf_train = shf_splits[cutoff][0]
+        df_shf_valid = shf_splits[cutoff][1]  
+
+        # Beginning of model-specific part
+        df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
+        share_dict = df_share.mean(axis=0).to_dict()
+        
+        df_model_train = df_shf_train['total'].to_frame().reset_index()
+        df_model_valid = df_shf_valid['total'].to_frame().reset_index()
+        df_model_train.columns = ['ds', 'y']
+        df_model_valid.columns = ['ds', 'y']
+
+        m = Prophet(yearly_seasonality=True, 
+                    weekly_seasonality=True, 
+                    daily_seasonality=False)
+        m.fit(df_model_train)
+        future = m.make_future_dataframe(periods=H)
+        df_forecast = m.predict(future)
+
+        for store_item in store_items_list:
+            store_item_deltas = []
+            df_item_forecast = df_forecast.copy()
+            df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
+            df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+            df_item_valid.columns = ['ds', 'y']
+                        
+            # Here I do comparison plots and evaluate performance metrics
+            df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
+            df_comp['cutoff'] = cutoff
+            df_comp['h_days'] = (df_comp.index - cutoff).days
+            df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+            deltas[store_item].append(df_comp.reset_index())
+            
+        # End of model-specific part   
+
+    results = {}        
+    for store_item in store_items_list:        
+        results[store_item] = pd.concat(deltas[store_item], axis=0, ignore_index=True)
+          
+    end = datetime.now()
+    time_delta = end - start
+    if(verbose):
+        print(f'# execution walltime: {str(time_delta)}')
+    
+    return results
+
+
+
+
+
+
 def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
                        n_store=None, n_store_items=None,
                        seasonality_mode='additive',
