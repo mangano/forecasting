@@ -7,6 +7,7 @@ import pickle
 # General data analysis imports
 import pandas as pd
 import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf
 
 # Facebook Prophet
 from prophet import Prophet
@@ -127,10 +128,22 @@ def do_share_by_store_analysis(df_h, hierarchy):
             axs[y,x].axvline(x=xmean, ymin=0, ymax=ymax, color='red')
             axs[y,x].title.set_text(f'store {ix}')
             ix +=1
-    return df_res
+   
+    fig, axs = plt.subplots(1)
+    plot_acf(df_res['1'], ax=axs, zero=False, lags=600, alpha=0.05);
+    
+    fig, axs = plt.subplots(10)
+    fig.tight_layout()
+    ix = 1
+    for y in range(10):
+        plot_acf(df_res[str(ix)], ax=axs[y], zero=False, lags=600, alpha=0.05)
+        ix +=1
+    
+    ## FIXME: I don't understand why I don't get the same values for the interval as from plot_acf
+    #acf, confint, qstat, pvalues = sm.tsa.acf(df_res['1'], nlags=600, alpha=0.05, qstat=True)
+    #plt.hist(pvalues, bins=30)
 
-
-
+    
 def mape(df_cv):
     df_cv['horizon'] = df_cv['ds']-df_cv['cutoff']
     df_cv['horizon'] = df_cv['horizon'].apply(lambda x: int(str(x).split()[0]))
