@@ -297,10 +297,206 @@ def shf_split(df, n_years_min_training=3.5, horizon=90, n_max_splits=7):
     return splits
 
 
-def new_shf_loop(shf_splits, store_items_list,
-                 #algo='boris1',
-                 H=90, 
-                 verbose=False):
+def shf_update_simple(df_shf_train, df_shf_valid, 
+                      store_items_list,
+                      cutoff, H, deltas, simple_type):
+    ## This function updates dictionary deltas
+    for store_item in store_items_list:    
+        df_model_train = df_shf_train[store_item].to_frame().reset_index()
+        df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_model_train.columns = ['ds', 'y']
+        df_model_valid.columns = ['ds', 'y']
+
+        if(simple_type=='naive'):
+            pred_value = df_model_train['y'].iloc[-1]
+        elif(simple_type=='average'):
+            pred_value = df_model_train['y'].mean()
+        else:
+            raise Exception("simple_type should be eitehr 'naive' or 'average' ")
+            
+        
+        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_item_valid.columns = ['ds', 'y']
+        
+        df_comp = df_item_valid.copy().set_index('ds')
+        df_comp['yhat'] = pred_value
+        df_comp['cutoff'] = cutoff
+        df_comp['h_days'] = (df_comp.index - cutoff).days
+        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+        deltas[store_item].append(df_comp.reset_index())
+                            
+def shf_update_naive(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+                            
+    shf_update_simple(df_shf_train, df_shf_valid, 
+                      store_items_list,cutoff, H, deltas, simple_type='naive')
+
+def shf_update_average(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+                            
+    shf_update_simple(df_shf_train, df_shf_valid, 
+                      store_items_list,cutoff, H, deltas, simple_type='average')
+
+
+                            
+                            
+def to_clean_shf_update_naive(df_shf_train, df_shf_valid, 
+                      store_items_list,
+                      cutoff, H, deltas):
+    ## This function updates dictionary deltas
+    for store_item in store_items_list:    
+        df_model_train = df_shf_train[store_item].to_frame().reset_index()
+        df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_model_train.columns = ['ds', 'y']
+        df_model_valid.columns = ['ds', 'y']
+
+        last_value = df_model_train['y'].iloc[-1]
+        
+        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_item_valid.columns = ['ds', 'y']
+        
+        df_comp = df_item_valid.copy().set_index('ds')
+        df_comp['yhat'] = last_value
+        df_comp['cutoff'] = cutoff
+        df_comp['h_days'] = (df_comp.index - cutoff).days
+        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+        deltas[store_item].append(df_comp.reset_index())
+
+def to_clean_shf_update_average(df_shf_train, df_shf_valid, 
+                       store_items_list,
+                       cutoff, H, deltas):
+    ## This function updates dictionary deltas
+    for store_item in store_items_list:    
+        df_model_train = df_shf_train[store_item].to_frame().reset_index()
+        df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_model_train.columns = ['ds', 'y']
+        df_model_valid.columns = ['ds', 'y']
+
+        average_value = df_model_train['y'].mean()
+        
+        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_item_valid.columns = ['ds', 'y']
+        
+        df_comp = df_item_valid.copy().set_index('ds')
+        df_comp['yhat'] = average_value
+        df_comp['cutoff'] = cutoff
+        df_comp['h_days'] = (df_comp.index - cutoff).days
+        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+        deltas[store_item].append(df_comp.reset_index())
+
+
+        
+def shf_update_seasonal_naive(df_shf_train, df_shf_valid, 
+                              store_items_list,
+                              cutoff, H, deltas):
+    ## This function updates dictionary deltas
+    df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
+    share_dict = df_share.mean(axis=0).to_dict()
+
+    df_model_train = df_shf_train['total'].to_frame().reset_index()
+    df_model_valid = df_shf_valid['total'].to_frame().reset_index()
+    df_model_train.columns = ['ds', 'y']
+    df_model_valid.columns = ['ds', 'y']
+
+    last_period_values  = df_model_train['y'].iloc[-7:].values
+    forecast_start_date = df_model_train['ds'].iloc[-1]+pd.Timedelta(1, 'day')
+    forecast_dates = pd.date_range(start=forecast_start_date, periods=H, freq='D')
+
+    forecast_values = math.ceil(H/7)*list(last_period_values)
+    forecast_values = forecast_values[:H] #to have exactly H values
+    forecast_series = pd.Series(data=forecast_values, index=forecast_dates)
+    df_forecast = forecast_series.reset_index()
+    df_forecast.columns = ['ds', 'yhat']
+
+    for store_item in store_items_list:
+        store_item_deltas = []
+        df_item_forecast = df_forecast.copy()
+        df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
+        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_item_valid.columns = ['ds', 'y']
+
+        # Here I do comparison plots and evaluate performance metrics
+        df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
+        df_comp['cutoff'] = cutoff
+        df_comp['h_days'] = (df_comp.index - cutoff).days
+        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+        deltas[store_item].append(df_comp.reset_index())
+
+
+def shf_update_boris1(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    # Same as shf_update_boris, with add_holidays=False
+    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
+                     cutoff, H, add_holidays=False, deltas=deltas)
+
+def shf_update_boris2(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    # Same as shf_update_boris, with add_holidays=True
+    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
+                     cutoff, H, add_holidays=True, deltas=deltas)
+        
+
+def shf_update_boris(df_shf_train, df_shf_valid, 
+                     store_items_list,
+                     cutoff, H, add_holidays, 
+                     deltas):
+    ## This function updates dictionary deltas
+    df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
+    share_dict = df_share.mean(axis=0).to_dict()
+
+    df_model_train = df_shf_train['total'].to_frame().reset_index()
+    df_model_valid = df_shf_valid['total'].to_frame().reset_index()
+    df_model_train.columns = ['ds', 'y']
+    df_model_valid.columns = ['ds', 'y']
+
+    if(add_holidays):
+        custom_event = pd.DataFrame(
+            {'holiday': 'unkown',
+             'ds': pd.to_datetime(['2014-11-30', 
+                                   '2015-11-30',
+                                   '2016-11-30',
+                                   '2017-11-30']),
+              'lower_window': -4,
+              'upper_window': 1,
+            })
+        m = Prophet(yearly_seasonality=True, 
+                    weekly_seasonality=True, 
+                    daily_seasonality=False,
+                    holidays=custom_event)
+    else:
+        m = Prophet(yearly_seasonality=True, 
+                    weekly_seasonality=True, 
+                    daily_seasonality=False)
+        
+    m.fit(df_model_train)
+    future = m.make_future_dataframe(periods=H)
+    df_forecast = m.predict(future)
+
+    for store_item in store_items_list:
+        store_item_deltas = []
+        df_item_forecast = df_forecast.copy()
+        df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
+        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_item_valid.columns = ['ds', 'y']
+
+        # Here I do comparison plots and evaluate performance metrics
+        df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
+        df_comp['cutoff'] = cutoff
+        df_comp['h_days'] = (df_comp.index - cutoff).days
+        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+        deltas[store_item].append(df_comp.reset_index())
+
+
+algo_mapping = {'boris1':shf_update_boris1,
+                'boris2':shf_update_boris2,
+                'naive':shf_update_naive,
+                'seasonal_naive':shf_update_seasonal_naive,
+                'average':shf_update_average
+               }
+
+def shf_loop(shf_splits, store_items_list,
+             algo='boris1', H=90, 
+             verbose=False):
     
     start = datetime.now()
     cutoffs = list(shf_splits.keys())
@@ -314,38 +510,13 @@ def new_shf_loop(shf_splits, store_items_list,
         df_shf_train = shf_splits[cutoff][0]
         df_shf_valid = shf_splits[cutoff][1]  
 
-        # Beginning of model-specific part
-        df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
-        share_dict = df_share.mean(axis=0).to_dict()
+        # Use algo_mapping to call specific implementation of update method
+        # for the specified algo
+        algo_mapping[algo](df_shf_train, df_shf_valid, 
+                           store_items_list,
+                           cutoff, H,  
+                           deltas)
         
-        df_model_train = df_shf_train['total'].to_frame().reset_index()
-        df_model_valid = df_shf_valid['total'].to_frame().reset_index()
-        df_model_train.columns = ['ds', 'y']
-        df_model_valid.columns = ['ds', 'y']
-
-        m = Prophet(yearly_seasonality=True, 
-                    weekly_seasonality=True, 
-                    daily_seasonality=False)
-        m.fit(df_model_train)
-        future = m.make_future_dataframe(periods=H)
-        df_forecast = m.predict(future)
-
-        for store_item in store_items_list:
-            store_item_deltas = []
-            df_item_forecast = df_forecast.copy()
-            df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
-            df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
-            df_item_valid.columns = ['ds', 'y']
-                        
-            # Here I do comparison plots and evaluate performance metrics
-            df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
-            df_comp['cutoff'] = cutoff
-            df_comp['h_days'] = (df_comp.index - cutoff).days
-            df_comp['delta'] = df_comp['yhat'] - df_comp['y']
-            deltas[store_item].append(df_comp.reset_index())
-            
-        # End of model-specific part   
-
     results = {}        
     for store_item in store_items_list:        
         results[store_item] = pd.concat(deltas[store_item], axis=0, ignore_index=True)
@@ -359,103 +530,6 @@ def new_shf_loop(shf_splits, store_items_list,
 
 
 
-
-
-
-def shf_forecasts_loop(hierarchy, shf_splits, algo='naive',
-                       n_store=None, n_store_items=None,
-                       seasonality_mode='additive',
-                       H=90, verbose=False):
-    
-    start = datetime.now()
-    cutoffs = list(shf_splits.keys())
-
-    # FIXME: take just 1 to speed up testing
-    #cutoffs = cutoffs[1:4]
-
-    forecasts_dict = {}    
-    stores = hierarchy['total']
-
-    # take just few to speed up testing
-    if(n_store is not None):
-        stores = stores[:n_store]
-        
-    for store in stores:
-        if(verbose):
-            print(f'# store: {store}')
-        store_items = hierarchy[store]
-        
-        # take just few to speed up testing
-        if(n_store_items is not None):
-            store_items = store_items[:n_store_items]
-
-        for store_item in store_items:
-            if(verbose):
-                print(f'# store_item: {store_item}')
-
-            shf_forecasts = []
-            for cutoff in cutoffs:
-                #print (f'# cutoff: {cutoff.date()}')
-                df_shf_train = shf_splits[cutoff][0]
-                df_shf_valid = shf_splits[cutoff][1]  
-
-                # Reformatting datasets (follwowing Prophet requirement)
-                df_model_train = df_shf_train[store_item].to_frame().reset_index()
-                df_model_valid = df_shf_valid[store_item].to_frame().reset_index()
-                df_model_train.columns = ['ds', 'y']
-                df_model_valid.columns = ['ds', 'y']
-
-                ### Model specific part
-                if(algo=='prophet'):                
-                    m = Prophet(yearly_seasonality=True, 
-                                weekly_seasonality=True, 
-                                daily_seasonality=False,
-                                seasonality_mode=seasonality_mode)
-                    m.fit(df_model_train)
-                    future = m.make_future_dataframe(periods=H)
-                    df_forecast = m.predict(future)
-                elif(algo in ('naive','average')):
-                    # simple models
-                    last_train_tmstp = df_model_train['ds'].max()
-                    forecast_naive  = \
-                        df_model_train[df_model_train['ds']==last_train_tmstp]['y'].values[0]
-                    forcast_average = df_model_train['y'].mean()
-                    future_dates = pd.date_range(start=last_train_tmstp+pd.Timedelta(1, 'day'), 
-                                                 freq='D', periods=H)
-                    forecast = forecast_naive if algo=='naive' else forcast_average
-                    df_forecast = pd.DataFrame({'ds':future_dates, 
-                                                    'yhat':forecast})
-                else:
-                    raise ValueError("algo should be in ('naive', 'average', 'average')")
-                ####
-                
-                # Here I do comparison plots and evaluate performance metrics
-                df_comp = df_model_valid.set_index('ds').join(df_forecast.set_index('ds'))
-                df_comp['cutoff'] = cutoff
-                df_comp['h_days'] = (df_comp.index - cutoff).days
-                df_comp['delta'] = df_comp['yhat'] - df_comp['y'] 
-                shf_forecasts.append(df_comp.reset_index())
-
-                plot = False
-                if(plot):
-                    xrange = [cutoff-pd.Timedelta(90, 'days'), cutoff+pd.Timedelta(100, 'days')]
-                    fig, ax = plt.subplots()
-                    ax.set_xlim(xrange)
-                    fig1 = m.plot(df_forecast, ax)
-
-                    xrange = [cutoff, cutoff+pd.Timedelta(100, 'days')]
-                    ax = df_comp[['y','yhat']].plot()
-                    ax.set_xlim(xrange)
-
-            df_concat = pd.concat(shf_forecasts, axis=0, ignore_index=True)
-            forecasts_dict[store_item] = df_concat
-            
-    end = datetime.now()
-    delta = end - start
-    if(verbose):
-        print(f'# execution walltime: {str(delta)}')
-    
-    return forecasts_dict
 
 
 def shf_forecasts_loop_for_hier_method(hierarchy, shf_splits, 
