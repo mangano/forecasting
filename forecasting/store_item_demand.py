@@ -380,7 +380,9 @@ def shf_update_boris1(df_shf_train, df_shf_valid,
                       store_items_list, cutoff, H, deltas):
     # Same as boris2, but without custom events for Prophet
     shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, holidays=None, deltas=deltas)
+                     cutoff, H, holidays=None, 
+                     seasonality_mode='additive',
+                     deltas=deltas)
 
 def shf_update_boris2(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
@@ -396,12 +398,65 @@ def shf_update_boris2(df_shf_train, df_shf_valid,
         })
     
     shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, holidays=custom_events, deltas=deltas)
+                     cutoff, H, holidays=custom_events,
+                     seasonality_mode='additive',
+                     deltas=deltas)
+
+def shf_update_boris2m(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    # Same as boris1, but setting some cutom events for Prophet
+    custom_events = pd.DataFrame(
+        {'holiday': 'unkown',
+         'ds': pd.to_datetime(['2014-11-30', 
+                               '2015-11-30',
+                               '2016-11-30',
+                               '2017-11-30']),
+         'lower_window': -4,
+         'upper_window': 1,
+        })
+    
+    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
+                     cutoff, H, holidays=custom_events,
+                     seasonality_mode='multiplicative',
+                     deltas=deltas)
+
+    
+    
+def shf_update_boris2p5(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    # Same as boris1, but setting some cutom events for Prophet
+    custom_events1 = pd.DataFrame(
+        {'holiday': 'april',
+         'ds': pd.to_datetime(['2014-04-06', 
+                               '2015-04-05',
+                               '2016-04-03',
+                               '2017-04-02']),
+         'lower_window': -7,
+         'upper_window': 1,
+        })
+
+    custom_events2 = pd.DataFrame(
+        {'holiday': 'november',
+         'ds': pd.to_datetime(['2014-11-30', 
+                               '2015-11-30',
+                               '2016-11-30',
+                               '2017-11-30']),
+         'lower_window': -4,
+         'upper_window': 1,
+        })
+
+    holidays = pd.concat((custom_events1, custom_events2))
+    
+    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
+                     cutoff, H, holidays=holidays,
+                     seasonality_mode='additive',
+                     deltas=deltas)
         
 
 def shf_update_boris(df_shf_train, df_shf_valid, 
                      store_items_list,
                      cutoff, H, holidays, 
+                     seasonality_mode,
                      deltas):
     ## This function updates dictionary deltas
     df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
@@ -415,6 +470,7 @@ def shf_update_boris(df_shf_train, df_shf_valid,
     m = Prophet(yearly_seasonality=True, 
                 weekly_seasonality=True, 
                 daily_seasonality=False,
+                seasonality_mode=seasonality_mode,
                 holidays=holidays)
 
     m.fit(df_model_train)
@@ -513,6 +569,8 @@ def shf_update_prophet_middle(df_shf_train, df_shf_valid,
         
 algo_mapping = {'boris1':shf_update_boris1,
                 'boris2':shf_update_boris2,
+                'boris2m':shf_update_boris2m,
+                'boris2.5':shf_update_boris2p5,
                 'boris3':shf_update_boris3,
                 'boris4':shf_update_boris4,
                 'naive':shf_update_naive,
