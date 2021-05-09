@@ -384,6 +384,14 @@ def shf_update_boris1(df_shf_train, df_shf_valid,
                      seasonality_mode='additive',
                      deltas=deltas)
 
+def shf_update_boris1m(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+
+    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
+                     cutoff, H, holidays=None, 
+                     seasonality_mode='multiplicative',
+                     deltas=deltas)
+    
 def shf_update_boris2(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
     # Same as boris1, but setting some cutom events for Prophet
@@ -491,6 +499,112 @@ def shf_update_boris(df_shf_train, df_shf_valid,
         df_comp['delta'] = df_comp['yhat'] - df_comp['y']
         deltas[store_item].append(df_comp.reset_index())
 
+                
+def shf_update_on_off_season(df_shf_train, df_shf_valid, 
+                             store_items_list,
+                             cutoff, H, holidays, 
+                             seasonality_mode,
+                             add_monthly,
+                             yearly_seasonality,
+                             deltas):
+    ## This function updates dictionary deltas
+    df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
+    share_dict = df_share.mean(axis=0).to_dict()
+
+    df_model_train = df_shf_train['total'].to_frame().reset_index()
+    df_model_valid = df_shf_valid['total'].to_frame().reset_index()
+    df_model_train.columns = ['ds', 'y']
+    df_model_valid.columns = ['ds', 'y']
+ 
+    m = Prophet(yearly_seasonality=yearly_seasonality, 
+                weekly_seasonality=False, 
+                daily_seasonality=False,
+                seasonality_mode=seasonality_mode,
+                holidays=holidays)
+    
+    ## on_off_season_custom_seasonality
+    def is_on_season(ds):
+        date = pd.to_datetime(ds)
+        return ((date.month >= 3) & (date.month < 12))
+    
+    df_model_train = df_model_train.copy()
+    df_model_train['on_season']  =  df_model_train['ds'].apply(is_on_season)
+    df_model_train['off_season'] = ~df_model_train['ds'].apply(is_on_season)
+    
+    m.add_seasonality(name='weekly_on_season', period=7, fourier_order=3, condition_name='on_season')
+    m.add_seasonality(name='weekly_off_season', period=7, fourier_order=3, condition_name='off_season')
+    ## 
+    if(add_monthly):
+        m.add_seasonality(name='monthly', period=30.5, fourier_order=5, mode='multiplicative')
+
+
+    
+    m.fit(df_model_train)
+    future = m.make_future_dataframe(periods=H)
+    
+    ## on_off_season_custom_seasonality
+    future['on_season']  =  future['ds'].apply(is_on_season)
+    future['off_season'] = ~future['ds'].apply(is_on_season)
+    
+    df_forecast = m.predict(future)
+
+    for store_item in store_items_list:
+        store_item_deltas = []
+        df_item_forecast = df_forecast.copy()
+        df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
+        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
+        df_item_valid.columns = ['ds', 'y']
+
+        # Here I do comparison plots and evaluate performance metrics
+        df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
+        df_comp['cutoff'] = cutoff
+        df_comp['h_days'] = (df_comp.index - cutoff).days
+        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
+        deltas[store_item].append(df_comp.reset_index())
+
+
+def shf_update_boris5(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    # Same as boris1, but setting some cutom events for Prophet
+    custom_events = pd.DataFrame(
+        {'holiday': 'unkown',
+         'ds': pd.to_datetime(['2013-11-30', 
+                               '2014-11-30',
+                               '2015-11-30',
+                               '2016-11-30',
+                               '2017-11-30']),
+         'lower_window': -4,
+         'upper_window': 1,
+        })
+    
+    shf_update_on_off_season(df_shf_train, df_shf_valid, store_items_list,
+                             cutoff, H, holidays=custom_events,
+                             seasonality_mode='multiplicative',
+                             add_monthly=False,
+                             yearly_seasonality=True,
+                             deltas=deltas)
+    
+def shf_update_boris6(df_shf_train, df_shf_valid, 
+                      store_items_list, cutoff, H, deltas):
+    # Same as boris1, but setting some cutom events for Prophet
+    custom_events = pd.DataFrame(
+        {'holiday': 'unkown',
+         'ds': pd.to_datetime(['2013-11-30',
+                               '2014-11-30', 
+                               '2015-11-30',
+                               '2016-11-30',
+                               '2017-11-30']),
+         'lower_window': -4,
+         'upper_window': 1,
+        })
+    
+    shf_update_on_off_season(df_shf_train, df_shf_valid, store_items_list,
+                             cutoff, H, holidays=custom_events,
+                             seasonality_mode='multiplicative',
+                             add_monthly=False,
+                             yearly_seasonality=20,
+                             deltas=deltas)
+        
         
 def shf_update_boris3(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
@@ -568,11 +682,14 @@ def shf_update_prophet_middle(df_shf_train, df_shf_valid,
         
         
 algo_mapping = {'boris1':shf_update_boris1,
+                'boris1m':shf_update_boris1m,
                 'boris2':shf_update_boris2,
                 'boris2m':shf_update_boris2m,
                 'boris2.5':shf_update_boris2p5,
                 'boris3':shf_update_boris3,
                 'boris4':shf_update_boris4,
+                'boris5':shf_update_boris5,
+                'boris6':shf_update_boris6,
                 'naive':shf_update_naive,
                 'seasonal_naive':shf_update_seasonal_naive,
                 'average':shf_update_average
