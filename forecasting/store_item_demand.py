@@ -324,15 +324,6 @@ def shf_update_modelX(modelX):
                                    deltas=deltas)
     return new_update_func
     
-## to keep
-algo_mapping = {'model1':shf_update_modelX('model1'),
-                'model2':shf_update_modelX('model2'),
-                'model3':shf_update_modelX('model3'),
-                'model4':shf_update_modelX('model4'),
-                'naive':shf_update_naive,
-                'seasonal_naive':shf_update_seasonal_naive,
-                'average':shf_update_average
-               }
 
 ## to keep
 def do_all_shf_steps(splits, store_items_list, algo,
@@ -466,6 +457,19 @@ def shf_update_seasonal_naive(df_shf_train, df_shf_valid,
         df_comp['delta'] = df_comp['yhat'] - df_comp['y']
         deltas[store_item].append(df_comp.reset_index())
 
+## to keep
+algo_mapping = {'model1':shf_update_modelX('model1'),
+                'model2':shf_update_modelX('model2'),
+                'model3':shf_update_modelX('model3'),
+                'model4':shf_update_modelX('model4'),
+                'model5':shf_update_modelX('model5'),
+                'naive':shf_update_naive,
+                'seasonal_naive':shf_update_seasonal_naive,
+                'average':shf_update_average
+               }
+
+
+        
 custom_events_nov = pd.DataFrame(
     {'holiday': 'unkown',
      'ds': pd.to_datetime(['2013-11-30',
@@ -505,6 +509,18 @@ def prophet_model(model_name):
                           fourier_order=3, condition_name='on_season')
         m.add_seasonality(name='weekly_off_season', period=7, 
                           fourier_order=3, condition_name='off_season')
+    elif(model_name=='model5'):
+        m = Prophet(yearly_seasonality=13,
+                    weekly_seasonality=False, 
+                    daily_seasonality=False,
+                    seasonality_mode='multiplicative',
+                    holidays=custom_events_nov)
+        m.add_seasonality(name='weekly_on_season', period=7, 
+                          fourier_order=3, condition_name='on_season')
+        m.add_seasonality(name='weekly_off_season', period=7, 
+                          fourier_order=3, condition_name='off_season')
+
+
 
     else:
         m=None
@@ -516,7 +532,10 @@ def model_first_check(model_name, df_train, H=90):
     m = prophet_model(model_name)
     m.fit(df_train)
     future = m.make_future_dataframe(periods=H)
-
+    future['off_season'] = ~future['ds'].apply(is_on_season)  #winter: Dec, Jan, Feb
+    future['on_season']  = future['ds'].apply(is_on_season)    # on season: rest of year
+    
+    
     df_forecast = m.predict(future)
     
     # calculating residuals
@@ -546,7 +565,7 @@ def model_first_check(model_name, df_train, H=90):
     
     # checking correlation of residuals
     fig, axs = plt.subplots(1)
-    axs = plot_acf(ts_res, ax=axs, zero=False, lags=360, alpha=0.05,
+    axs = plot_acf(ts_res, ax=axs, zero=False, lags=300, alpha=0.05,
                    title=f'Autocorrelation')
     return m, df_forecast, ts_res
 
@@ -556,11 +575,6 @@ def shf_update_topdown_prophet(m,
                                df_shf_train, df_shf_valid, 
                                store_items_list,
                                cutoff, H, 
-                               #holidays, 
-                               #model,
-                               #seasonality_mode,
-                               #add_monthly,
-                               #yearly_seasonality,
                                deltas):
     ## This function updates dictionary deltas
     df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
@@ -575,11 +589,6 @@ def shf_update_topdown_prophet(m,
     df_model_train = df_model_train.copy()
     df_model_train['on_season']  =  df_model_train['ds'].apply(is_on_season)
     df_model_train['off_season'] = ~df_model_train['ds'].apply(is_on_season)
-    
-    #if(add_monthly):
-    #    m.add_seasonality(name='monthly', period=30.5, fourier_order=5, mode='multiplicative')
-
-
     
     m.fit(df_model_train)
     future = m.make_future_dataframe(periods=H)
@@ -609,284 +618,8 @@ def shf_update_topdown_prophet(m,
     
     
         
-## to keep 
-def old_shf_update_topdown_prophet(df_shf_train, df_shf_valid, 
-                               store_items_list,
-                               cutoff, H, holidays, 
-                               seasonality_mode,
-                               deltas):
-    ## This function updates dictionary deltas
-    df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
-    share_dict = df_share.mean(axis=0).to_dict()
-
-    df_model_train = df_shf_train['total'].to_frame().reset_index()
-    df_model_valid = df_shf_valid['total'].to_frame().reset_index()
-    df_model_train.columns = ['ds', 'y']
-    df_model_valid.columns = ['ds', 'y']
- 
-    m = Prophet(yearly_seasonality=True, 
-                weekly_seasonality=True, 
-                daily_seasonality=False,
-                seasonality_mode=seasonality_mode,
-                holidays=holidays)
-
-    m.fit(df_model_train)
-    future = m.make_future_dataframe(periods=H)
-    df_forecast = m.predict(future)
-
-    for store_item in store_items_list:
-        store_item_deltas = []
-        df_item_forecast = df_forecast.copy()
-        df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
-        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
-        df_item_valid.columns = ['ds', 'y']
-
-        # Here I do comparison plots and evaluate performance metrics
-        df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
-        df_comp['cutoff'] = cutoff
-        df_comp['h_days'] = (df_comp.index - cutoff).days
-        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
-        deltas[store_item].append(df_comp.reset_index())
 
 
-        
-## to keep
-def shf_update_boris1(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-
-    shf_update_topdown_prophet(df_shf_train, df_shf_valid, store_items_list,
-                               cutoff, H, holidays=None, 
-                               seasonality_mode='additive',
-                               deltas=deltas)
-
-## to keep
-def shf_update_boris1m(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-
-    shf_update_topdown_prophet(df_shf_train, df_shf_valid, store_items_list,
-                               cutoff, H, holidays=None, 
-                               seasonality_mode='multiplicative',
-                               deltas=deltas)
-
-## to keep
-def shf_update_on_off_season(df_shf_train, df_shf_valid, 
-                             store_items_list,
-                             cutoff, H, holidays, 
-                             seasonality_mode,
-                             add_monthly,
-                             yearly_seasonality,
-                             deltas):
-    ## This function updates dictionary deltas
-    df_share = df_shf_train[store_items_list].divide(df_shf_train['total'], axis=0)
-    share_dict = df_share.mean(axis=0).to_dict()
-
-    df_model_train = df_shf_train['total'].to_frame().reset_index()
-    df_model_valid = df_shf_valid['total'].to_frame().reset_index()
-    df_model_train.columns = ['ds', 'y']
-    df_model_valid.columns = ['ds', 'y']
- 
-    m = Prophet(yearly_seasonality=yearly_seasonality, 
-                weekly_seasonality=False, 
-                daily_seasonality=False,
-                seasonality_mode=seasonality_mode,
-                holidays=holidays)
-    
-    ## on_off_season_custom_seasonality
-    def is_on_season(ds):
-        date = pd.to_datetime(ds)
-        return ((date.month >= 3) & (date.month < 12))
-    
-    df_model_train = df_model_train.copy()
-    df_model_train['on_season']  =  df_model_train['ds'].apply(is_on_season)
-    df_model_train['off_season'] = ~df_model_train['ds'].apply(is_on_season)
-    
-    m.add_seasonality(name='weekly_on_season', period=7, fourier_order=3, condition_name='on_season')
-    m.add_seasonality(name='weekly_off_season', period=7, fourier_order=3, condition_name='off_season')
-    ## 
-    if(add_monthly):
-        m.add_seasonality(name='monthly', period=30.5, fourier_order=5, mode='multiplicative')
-
-
-    
-    m.fit(df_model_train)
-    future = m.make_future_dataframe(periods=H)
-    
-    ## on_off_season_custom_seasonality
-    future['on_season']  =  future['ds'].apply(is_on_season)
-    future['off_season'] = ~future['ds'].apply(is_on_season)
-    
-    df_forecast = m.predict(future)
-
-    for store_item in store_items_list:
-        store_item_deltas = []
-        df_item_forecast = df_forecast.copy()
-        df_item_forecast['yhat'] = df_item_forecast['yhat']*share_dict[store_item]
-        df_item_valid = df_shf_valid[store_item].to_frame().reset_index()
-        df_item_valid.columns = ['ds', 'y']
-
-        # Here I do comparison plots and evaluate performance metrics
-        df_comp = df_item_valid.set_index('ds').join(df_item_forecast.set_index('ds'))
-        df_comp['cutoff'] = cutoff
-        df_comp['h_days'] = (df_comp.index - cutoff).days
-        df_comp['delta'] = df_comp['yhat'] - df_comp['y']
-        deltas[store_item].append(df_comp.reset_index())
-
-
-def shf_update_boris2(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-
-    shf_update_on_off_season(df_shf_train, df_shf_valid, store_items_list,
-                             cutoff, H, holidays=custom_events,
-                             seasonality_mode='multiplicative',
-                             add_monthly=False,
-                             yearly_seasonality=True,
-                             deltas=deltas)
-        
-        
-        
-
-def shf_update_boris2(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    # Same as boris1, but setting some cutom events for Prophet
-    custom_events = pd.DataFrame(
-        {'holiday': 'unkown',
-         'ds': pd.to_datetime(['2014-11-30', 
-                               '2015-11-30',
-                               '2016-11-30',
-                               '2017-11-30']),
-         'lower_window': -4,
-         'upper_window': 1,
-        })
-    
-    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, holidays=custom_events,
-                     seasonality_mode='additive',
-                     deltas=deltas)
-
-def shf_update_boris2m(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    # Same as boris1, but setting some cutom events for Prophet
-    custom_events = pd.DataFrame(
-        {'holiday': 'unkown',
-         'ds': pd.to_datetime(['2014-11-30', 
-                               '2015-11-30',
-                               '2016-11-30',
-                               '2017-11-30']),
-         'lower_window': -4,
-         'upper_window': 1,
-        })
-    
-    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, holidays=custom_events,
-                     seasonality_mode='multiplicative',
-                     deltas=deltas)
-
-    
-    
-def shf_update_boris2p5(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    # Same as boris1, but setting some cutom events for Prophet
-    custom_events1 = pd.DataFrame(
-        {'holiday': 'april',
-         'ds': pd.to_datetime(['2014-04-06', 
-                               '2015-04-05',
-                               '2016-04-03',
-                               '2017-04-02']),
-         'lower_window': -7,
-         'upper_window': 1,
-        })
-
-    custom_events2 = pd.DataFrame(
-        {'holiday': 'november',
-         'ds': pd.to_datetime(['2014-11-30', 
-                               '2015-11-30',
-                               '2016-11-30',
-                               '2017-11-30']),
-         'lower_window': -4,
-         'upper_window': 1,
-        })
-
-    holidays = pd.concat((custom_events1, custom_events2))
-    
-    shf_update_boris(df_shf_train, df_shf_valid, store_items_list,
-                     cutoff, H, holidays=holidays,
-                     seasonality_mode='additive',
-                     deltas=deltas)
-        
-
-
-                
-
-
-def shf_update_boris5(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    # Same as boris1, but setting some cutom events for Prophet
-    custom_events = pd.DataFrame(
-        {'holiday': 'unkown',
-         'ds': pd.to_datetime(['2013-11-30', 
-                               '2014-11-30',
-                               '2015-11-30',
-                               '2016-11-30',
-                               '2017-11-30']),
-         'lower_window': -4,
-         'upper_window': 1,
-        })
-    
-    shf_update_on_off_season(df_shf_train, df_shf_valid, store_items_list,
-                             cutoff, H, holidays=custom_events,
-                             seasonality_mode='multiplicative',
-                             add_monthly=False,
-                             yearly_seasonality=True,
-                             deltas=deltas)
-    
-def shf_update_boris6(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    # Same as boris1, but setting some cutom events for Prophet
-    custom_events = pd.DataFrame(
-        {'holiday': 'unkown',
-         'ds': pd.to_datetime(['2013-11-30',
-                               '2014-11-30', 
-                               '2015-11-30',
-                               '2016-11-30',
-                               '2017-11-30']),
-         'lower_window': -4,
-         'upper_window': 1,
-        })
-    
-    shf_update_on_off_season(df_shf_train, df_shf_valid, store_items_list,
-                             cutoff, H, holidays=custom_events,
-                             seasonality_mode='multiplicative',
-                             add_monthly=False,
-                             yearly_seasonality=20,
-                             deltas=deltas)
-        
-        
-def shf_update_boris3(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    
-    shf_update_prophet_middle(df_shf_train, df_shf_valid, 
-                              store_items_list, cutoff, H, holidays=None,
-                              deltas=deltas)
-    
-
-def shf_update_boris4(df_shf_train, df_shf_valid, 
-                      store_items_list, cutoff, H, deltas):
-    
-    # Same as boris3, but setting some cutom events for Prophet
-    custom_events = pd.DataFrame(
-        {'holiday': 'unkown',
-         'ds': pd.to_datetime(['2014-11-30', 
-                               '2015-11-30',
-                               '2016-11-30',
-                               '2017-11-30']),
-         'lower_window': -4,
-         'upper_window': 1,
-        })
-    
-    shf_update_prophet_middle(df_shf_train, df_shf_valid, 
-                              store_items_list, cutoff, H, 
-                              holidays=custom_events,
-                              deltas=deltas)
         
         
 def shf_update_prophet_middle(df_shf_train, df_shf_valid, 
@@ -1025,9 +758,7 @@ def shf_forecasts_loop_for_hier_method(hierarchy, shf_splits,
 def eval_performance(forecasts_dict):
     dfs_perf = []
     for k in forecasts_dict.keys():
-        #list_columns = ['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'y', 'cutoff']
         list_columns = ['ds', 'yhat', 'y', 'cutoff']
-        #list_columns = ['yhat', 'y', 'cutoff']
         df_cv = forecasts_dict[k][list_columns].copy()
         df_perf = performance_metrics(df_cv)
         df_perf['h_days'] = df_perf['horizon'].apply(lambda x: x.days)
