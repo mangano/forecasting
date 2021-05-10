@@ -403,18 +403,6 @@ def shf_update_seasonal_naive(df_shf_train, df_shf_valid,
         deltas[store_item].append(df_comp.reset_index())
 
 
-algo_mapping = {'model1':shf_update_modelX('model1'),
-                'model2':shf_update_modelX('model2'),
-                'model3':shf_update_modelX('model3'),
-                'model4':shf_update_modelX('model4'),
-                'model5':shf_update_modelX('model5'),
-                'model6':shf_update_modelX('model6'),
-                'naive':shf_update_naive,
-                'seasonal_naive':shf_update_seasonal_naive,
-                'average':shf_update_average,
-                'middle-down':shf_update_prophet_middle
-               }
-
         
 custom_events_nov = pd.DataFrame(
     {'holiday': 'unkown',
@@ -633,93 +621,17 @@ def shf_update_prophet_middle(df_shf_train, df_shf_valid,
             deltas[store_item].append(df_comp.reset_index())
 
 
-
-
-def shf_forecasts_loop_for_hier_method(hierarchy, shf_splits, 
-                                       n_store=1,
-                                       verbose=False, H=90):
-    
-    start = datetime.now()
-    cutoffs = list(shf_splits.keys())
-
-    # FIXME: take just 1 to speed up testing
-    #cutoffs = cutoffs[0:1]
-
-    forecasts_dict = {}    
-    stores = hierarchy['total']
-    
-    # take just few to speed up testing
-    if(n_store is not None):
-        stores = stores[:n_store]
-    
-    all_store_item_shf_forecasts = {}
-    for store in stores:
-        if(verbose):
-            print(f'# store: {store}')
-        store_items = hierarchy[store]
-        for store_item in store_items:
-            all_store_item_shf_forecasts[store_item] = []
-        
-        store_hier = {store: hierarchy[store]}
-        store_hier_cols = hierarchy[store].copy()
-        store_hier_cols.append(store)
-        
-        shf_forecasts = []
-        for cutoff in cutoffs:
-            if(verbose):
-                print (f'# cutoff: {cutoff.date()}')
-            df_shf_train = shf_splits[cutoff][0]
-            df_shf_valid = shf_splits[cutoff][1]  
-
-            df_shf_train = df_shf_train[store_hier_cols]
-            df_shf_valid = df_shf_valid[store_hier_cols]
-            
-
-            ### Model specific part
-            fit_converged=False
-            fit_attempt=0
-            while(fit_converged==False):
-                fit_attempt +=1
-                if(verbose):
-                    print(f'# fit attempt {fit_attempt}')
-                model_hts_prophet = hts.HTSRegressor(model='prophet', 
-                                                     revision_method='OLS',
-                                                     #n_jobs=4,
-                                                     daily_seasonality=False)
-                model_hts_prophet = model_hts_prophet.fit(df=df_shf_train, 
-                                                          nodes=store_hier, 
-                                                          root=store,
-                                                          disable_progressbar=True)
-                df_forecast = model_hts_prophet.predict(steps_ahead=H,
-                                                        disable_progressbar=True)
-                fit_converged = (df_forecast.min().min()>0)
-            
-            for store_item in store_items:
-                df_store_forecast = df_forecast[[store_item]].rename({store_item:'yhat'}, axis=1)
-                df_store_valid = df_shf_valid[[store_item]].rename({store_item:'y'}, axis=1)
-                df_comp = df_store_valid.join(df_store_forecast)
-                df_comp['cutoff'] = cutoff
-                df_comp['h_days'] = (df_comp.index - cutoff).days
-                df_comp['delta'] = df_comp['yhat'] - df_comp['y']
-                df_comp = df_comp.reset_index().rename({'date':'ds'}, axis=1)
-                all_store_item_shf_forecasts[store_item].append(df_comp)
-            ####           
-    
-        for store_item in store_items:
-            df_concat = pd.concat(all_store_item_shf_forecasts[store_item], 
-                                  axis=0, ignore_index=True)
-            forecasts_dict[store_item] = df_concat    
-    
-    end = datetime.now()
-    delta = end - start
-    if(verbose):
-        print(f'# execution walltime: {str(delta)}')
-    
-    return forecasts_dict
-
-
-
-
+algo_mapping = {'model1':shf_update_modelX('model1'),
+                'model2':shf_update_modelX('model2'),
+                'model3':shf_update_modelX('model3'),
+                'model4':shf_update_modelX('model4'),
+                'model5':shf_update_modelX('model5'),
+                'model6':shf_update_modelX('model6'),
+                'naive':shf_update_naive,
+                'seasonal_naive':shf_update_seasonal_naive,
+                'average':shf_update_average,
+                'middle-down':shf_update_prophet_middle
+               }
 
 def eval_performance(forecasts_dict):
     dfs_perf = []
