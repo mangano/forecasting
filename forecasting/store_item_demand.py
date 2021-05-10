@@ -408,6 +408,7 @@ algo_mapping = {'model1':shf_update_modelX('model1'),
                 'model3':shf_update_modelX('model3'),
                 'model4':shf_update_modelX('model4'),
                 'model5':shf_update_modelX('model5'),
+                'model6':shf_update_modelX('model6'),
                 'naive':shf_update_naive,
                 'seasonal_naive':shf_update_seasonal_naive,
                 'average':shf_update_average,
@@ -463,6 +464,18 @@ def prophet_model(model_name):
                           fourier_order=3, condition_name='on_season')
         m.add_seasonality(name='weekly_off_season', period=7, 
                           fourier_order=3, condition_name='off_season')
+    elif(model_name=='model6'):
+        m = Prophet(yearly_seasonality=13,
+                    weekly_seasonality=False, 
+                    daily_seasonality=False,
+                    seasonality_mode='multiplicative',
+                    holidays=custom_events_nov)
+        m.add_seasonality(name='weekly_peak_season', period=7, 
+                          fourier_order=3, condition_name='peak_season')
+        m.add_seasonality(name='weekly_norm_season', period=7, 
+                          fourier_order=3, condition_name='norm_season')
+        m.add_seasonality(name='weekly_off_season', period=7, 
+                          fourier_order=3, condition_name='off_season')
 
     else:
         m=None
@@ -475,6 +488,8 @@ def model_first_check(model_name, df_train, H=90):
     future = m.make_future_dataframe(periods=H)
     future['off_season'] = ~future['ds'].apply(is_on_season)  #winter: Dec, Jan, Feb
     future['on_season']  = future['ds'].apply(is_on_season)    # on season: rest of year
+    future['peak_season'] = future['ds'].apply(lambda x: x.month in (6,7))
+    future['norm_season'] = future['ds'].apply(lambda x: x.month in (3,4,5,8,9,10,11))
     
     
     df_forecast = m.predict(future)
@@ -530,6 +545,8 @@ def shf_update_topdown_prophet(m,
     df_model_train = df_model_train.copy()
     df_model_train['on_season']  =  df_model_train['ds'].apply(is_on_season)
     df_model_train['off_season'] = ~df_model_train['ds'].apply(is_on_season)
+    df_model_train['peak_season'] = df_model_train['ds'].apply(lambda x: x.month in (6,7))
+    df_model_train['norm_season'] = df_model_train['ds'].apply(lambda x: x.month in (3,4,5,8,9,10,11))
     
     m.fit(df_model_train)
     future = m.make_future_dataframe(periods=H)
@@ -537,6 +554,8 @@ def shf_update_topdown_prophet(m,
     ## Necessary IF using on_off_season_custom_seasonality
     future['on_season']  =  future['ds'].apply(is_on_season)
     future['off_season'] = ~future['ds'].apply(is_on_season)
+    future['peak_season'] = future['ds'].apply(lambda x: x.month in (6,7))
+    future['norm_season'] = future['ds'].apply(lambda x: x.month in (3,4,5,8,9,10,11))
     
     df_forecast = m.predict(future)
 
@@ -576,15 +595,20 @@ def shf_update_prophet_middle(df_shf_train, df_shf_valid,
         df_model_train = df_store_train.copy()
         df_model_train['on_season']  =  df_model_train['ds'].apply(is_on_season)
         df_model_train['off_season'] = ~df_model_train['ds'].apply(is_on_season)
+        df_model_train['peak_season'] = df_model_train['ds'].apply(lambda x: x.month in (6,7))
+        df_model_train['norm_season'] = df_model_train['ds'].apply(lambda x: x.month in (3,4,5,8,9,10,11))
 
-        m = prophet_model('model5')
+        m = prophet_model('model6')
         m.fit(df_model_train)
         future = m.make_future_dataframe(periods=H)
         
         ## Necessary IF using on_off_season_custom_seasonality
         future['on_season']  =  future['ds'].apply(is_on_season)
         future['off_season'] = ~future['ds'].apply(is_on_season)
-        
+        future['peak_season'] = future['ds'].apply(lambda x: x.month in (6,7))
+        future['norm_season'] = future['ds'].apply(lambda x: x.month in (3,4,5,8,9,10,11))
+
+
         df_store_forecast = m.predict(future)
 
         
