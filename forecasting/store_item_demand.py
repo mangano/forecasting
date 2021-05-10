@@ -157,7 +157,7 @@ def do_share_analysis(df_h, list_cols, n_sample=None):
     
     
     
-## to drop ??    
+## Verifying I can reproduce FbProphet implementation    
 def mape(df_cv):
     df_cv['horizon'] = df_cv['ds']-df_cv['cutoff']
     df_cv['horizon'] = df_cv['horizon'].apply(lambda x: int(str(x).split()[0]))
@@ -179,61 +179,6 @@ def mape(df_cv):
     df_mape.columns = ['mape']    
     return df_mape
 
-
-## to drop ?? 
-def cv_validation(df_prophet, progress_bar):
-    m = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
-    m.fit(df_prophet)
-    df_cv = cross_validation(m, initial='1100 days', 
-                             period='90 days', horizon = '180 days', 
-                             disable_tqdm=(not progress_bar))
-    df_p = performance_metrics(df_cv)
-    
-    return df_cv, df_p
-
-
-## to drop ?? 
-def cv_loop(df_h, ts_list, progress_bar=True):
-    cvs = {}
-    perfs = {}
-    for idx in ts_list:
-        df_prophet = df_h[idx].to_frame().reset_index()
-        df_prophet.columns = ['ds', 'y']
-        df_cv, df_p = cv_validation(df_prophet, progress_bar)
-        cvs[idx] = df_cv
-        perfs[idx] = df_p    
-    return cvs, perfs
-
-
-## to drop ?? 
-def cv_plot(store_perfs, id_label, metric='smape',
-            n_days_horizon=180, n_increments=10):
-    increment_delta = math.floor(n_days_horizon/n_increments)  
-    h_subset = list(range(increment_delta, n_days_horizon, increment_delta))
-    
-    ts_list = []
-    ts_labels = []
-    for key, df_p in store_perfs.items():   
-        # convert delta into integers (days)
-        df_plot = df_p[['horizon',metric]].copy()
-        df_plot['horizon'] = df_plot['horizon'].apply(lambda x: x.days)
-
-        # only plot subset of well-separated h since consecutive days are correlated
-        df_to_plot = df_plot[df_plot['horizon'].isin(h_subset)]
-
-        # convert to ts to reuse bplot function
-        ts_to_plot = df_to_plot.set_index('horizon')[metric]
-        ts_list.append(ts_to_plot)
-        ts_labels.append(f'{id_label} {key}')
-    
-    
-    bplot.plot_timeseries(ts_list, ts_labels, xlabel='horizon [days]', 
-                          ylabel=metric.upper())
-
-    
-    
-    
-    
     
 ### HIERARCHICAL TIME SERIES
 
@@ -250,22 +195,6 @@ def calc_store_hier_preds(hierarchy, df_h, store_idx='1'):
     pred_hts = model_hts_prophet.predict(steps_ahead=90)
     return pred_hts
 
-## to drop ?? 
-def plot_comparison(df_train, df_preds, idx='1_1',
-                    xmin = None, xmax = None):
-    df_y = df_train[[idx]].copy()
-    df_y.columns =['y']
-
-    df_yhat = df_preds[[idx]].copy()
-    df_yhat.columns =['yhat']
-
-    df_comp = df_yhat.join(df_y)
-
-    ax = df_comp.plot(title="Sales - item level")
-    ax.legend(bbox_to_anchor=(1.0, 1.0));
-    x_range = [xmin, xmax]
-    ax.set_xlim(x_range);
-    
     
 
     
