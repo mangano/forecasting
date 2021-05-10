@@ -28,7 +28,18 @@ from hts.hierarchy import HierarchyTree
 # My own code
 import forecasting.bplot as bplot
 
-## to keep
+###################################################################
+#  _____                                            _             
+# |  __ \                                          (_)            
+# | |__) | __ ___ _ __  _ __ ___   ___ ___  ___ ___ _ _ __   __ _ 
+# |  ___/ '__/ _ \ '_ \| '__/ _ \ / __/ _ \/ __/ __| | '_ \ / _` |
+# | |   | | |  __/ |_) | | | (_) | (_|  __/\__ \__ \ | | | | (_| |
+# |_|   |_|  \___| .__/|_|  \___/ \___\___||___/___/_|_| |_|\__, |
+#                | |                                         __/ |
+#                |_|                                        |___/ 
+####################################################################
+
+
 def preprocess_data(file='data/train.csv'):
     df = pd.read_csv(file, parse_dates=['date'])
     df = df.astype({'store':str, 'item':str})
@@ -82,6 +93,8 @@ def preprocess_data(file='data/train.csv'):
     
     return df, df_h, hierarchy
 
+
+
 #####################################################################################################
 #  ______            _                 _                                          _           _     
 # |  ____|          | |               | |                       /\               | |         (_)    
@@ -93,7 +106,6 @@ def preprocess_data(file='data/train.csv'):
 #             |_|                                    |___/                          |___/           
 #####################################################################################################
 
-## to keeep
 def do_share_analysis(df_h, list_cols, n_sample=None):
     
     if(n_sample is not None):
@@ -180,6 +192,19 @@ def mape(df_cv):
     return df_mape
 
     
+
+        
+#################################################
+#  __  __           _      _ _             
+# |  \/  |         | |    | (_)            
+# | \  / | ___   __| | ___| |_ _ __   __ _ 
+# | |\/| |/ _ \ / _` |/ _ \ | | '_ \ / _` |
+# | |  | | (_) | (_| |  __/ | | | | | (_| |
+# |_|  |_|\___/ \__,_|\___|_|_|_| |_|\__, |
+#                                     __/ |
+#                                    |___/ 
+#################################################
+
 ### HIERARCHICAL TIME SERIES
 
 ## to drop ?? 
@@ -195,13 +220,8 @@ def calc_store_hier_preds(hierarchy, df_h, store_idx='1'):
     pred_hts = model_hts_prophet.predict(steps_ahead=90)
     return pred_hts
 
-    
 
-    
-    
-### Model evaluation
 
-## to keep
 def shf_split(df, n_years_min_training=3.5, horizon=90, n_max_splits=7):
     full_train_start = min(df.index)
     full_train_end   = max(df.index)
@@ -254,7 +274,6 @@ def shf_update_modelX(modelX):
     return new_update_func
     
 
-## to keep
 def do_all_shf_steps(splits, store_items_list, algo,
                      H=90, verbose=False):
     
@@ -335,21 +354,18 @@ def shf_update_simple(df_shf_train, df_shf_valid,
         df_comp['delta'] = df_comp['yhat'] - df_comp['y']
         deltas[store_item].append(df_comp.reset_index())
 
-## to keep                            
 def shf_update_naive(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
                             
     shf_update_simple(df_shf_train, df_shf_valid, 
                       store_items_list,cutoff, H, deltas, simple_type='naive')
 
-## to keep
 def shf_update_average(df_shf_train, df_shf_valid, 
                       store_items_list, cutoff, H, deltas):
                             
     shf_update_simple(df_shf_train, df_shf_valid, 
                       store_items_list,cutoff, H, deltas, simple_type='average')
 
-## to keep        
 def shf_update_seasonal_naive(df_shf_train, df_shf_valid, 
                               store_items_list,
                               cutoff, H, deltas):
@@ -386,7 +402,7 @@ def shf_update_seasonal_naive(df_shf_train, df_shf_valid,
         df_comp['delta'] = df_comp['yhat'] - df_comp['y']
         deltas[store_item].append(df_comp.reset_index())
 
-## to keep
+
 algo_mapping = {'model1':shf_update_modelX('model1'),
                 'model2':shf_update_modelX('model2'),
                 'model3':shf_update_modelX('model3'),
@@ -394,9 +410,9 @@ algo_mapping = {'model1':shf_update_modelX('model1'),
                 'model5':shf_update_modelX('model5'),
                 'naive':shf_update_naive,
                 'seasonal_naive':shf_update_seasonal_naive,
-                'average':shf_update_average
+                'average':shf_update_average,
+                'middle-down':shf_update_prophet_middle
                }
-
 
         
 custom_events_nov = pd.DataFrame(
@@ -411,7 +427,6 @@ custom_events_nov = pd.DataFrame(
     })
 
 
-## to keeep        
 def prophet_model(model_name):
     if(model_name=='model1'):
         m = Prophet(yearly_seasonality=True,
@@ -449,14 +464,11 @@ def prophet_model(model_name):
         m.add_seasonality(name='weekly_off_season', period=7, 
                           fourier_order=3, condition_name='off_season')
 
-
-
     else:
         m=None
     
     return m
         
-## to keep
 def model_first_check(model_name, df_train, H=90):
     m = prophet_model(model_name)
     m.fit(df_train)
@@ -542,18 +554,11 @@ def shf_update_topdown_prophet(m,
         df_comp['delta'] = df_comp['yhat'] - df_comp['y']
         deltas[store_item].append(df_comp.reset_index())
 
-
-
-    
-    
-        
-
-
-        
+      
         
 def shf_update_prophet_middle(df_shf_train, df_shf_valid, 
                               store_items_list,
-                              cutoff, H, holidays, 
+                              cutoff, H, 
                               deltas):
     
     # to get sort list of stores from store_item_list
@@ -567,15 +572,23 @@ def shf_update_prophet_middle(df_shf_train, df_shf_valid,
         df_store_train = df_shf_train[str(store)].to_frame().reset_index()
         df_store_train.columns = ['ds', 'y']
  
-        m = Prophet(yearly_seasonality=True, 
-                    weekly_seasonality=True, 
-                    daily_seasonality=False,
-                    holidays=holidays)
-    
-        m.fit(df_store_train)
+        ## Necessary IF using on_off_season_custom_seasonality
+        df_model_train = df_store_train.copy()
+        df_model_train['on_season']  =  df_model_train['ds'].apply(is_on_season)
+        df_model_train['off_season'] = ~df_model_train['ds'].apply(is_on_season)
+
+        m = prophet_model('model5')
+        m.fit(df_model_train)
         future = m.make_future_dataframe(periods=H)
+        
+        ## Necessary IF using on_off_season_custom_seasonality
+        future['on_season']  =  future['ds'].apply(is_on_season)
+        future['off_season'] = ~future['ds'].apply(is_on_season)
+        
         df_store_forecast = m.predict(future)
 
+        
+        
         items_in_store_list = [x for x in store_items_list if x.split('_')[0]==store]
         df_share = df_shf_train[items_in_store_list].divide(df_shf_train[store], axis=0)
         share_dict = df_share.mean(axis=0).to_dict()     
@@ -697,6 +710,39 @@ def eval_performance(forecasts_dict):
     return merged_df_perf
 
 
+##########################################################################
+#  _____                                  ____        _               _   
+# |  __ \                                / __ \      | |             | |  
+# | |__) | __ ___ _ __   __ _ _ __ ___  | |  | |_   _| |_ _ __  _   _| |_ 
+# |  ___/ '__/ _ \ '_ \ / _` | '__/ _ \ | |  | | | | | __| '_ \| | | | __|
+# | |   | | |  __/ |_) | (_| | | |  __/ | |__| | |_| | |_| |_) | |_| | |_ 
+# |_|   |_|  \___| .__/ \__,_|_|  \___|  \____/ \__,_|\__| .__/ \__,_|\__|
+#                | |                                     | |              
+#                |_|                                     |_|              
+###########################################################################
+
+def prepare_output_file(df_forecast, df_h):
+    df_forecast_total = df_forecast[['ds', 'yhat']].query(" ds>='2018-01-01' ")
+    store_items_list = [f'{s}_{i}' for s in range(1,11) for i in range(1,51)]
+    
+    df_share = df_h[store_items_list].divide(df_h['total'], axis=0)
+    share_dict = df_share.mean(axis=0).to_dict()
+
+    results = []
+    for item in range(1,51):
+        for store in range(1,11):
+            #print(store, ', ', item)
+            df_tmp = df_forecast_total.copy()
+            df_tmp['sales'] = df_tmp['yhat']*share_dict[f"{str(store)}_{str(item)}"]
+            df_tmp['store'] = str(store)
+            df_tmp['item'] = str(item)
+            #results.append(df_tmp[['sales']])
+            results.append(df_tmp[['ds', 'store', 'item', 'sales']])
+            
+    df_for_output = pd.concat(results).reset_index(drop=True)
+    df_for_output.to_csv('final_predictions.csv')    
+        
+            
 ### Utilities ###
 
 
